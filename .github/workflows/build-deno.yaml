@@ -1,14 +1,13 @@
 name: Compile Deno
-
-on:
+true:
   release:
-    types: [created]
+    types:
+    - created
   workflow_dispatch:
     inputs:
       version:
         description: Version
         required: true
-
 jobs:
   metadata:
     name: Get Release Upload Metadata
@@ -18,70 +17,88 @@ jobs:
       upload_url: ${{ steps.get_upload.outputs.upload_url }}
       prerelease: ${{ steps.get_upload.outputs.prerelease }}
     steps:
-      - id: get_upload
-        run: |
-          export VERSION="${{ github.event.inputs.version || github.ref }}"
-          VERSION="${VERSION#refs/tags/}"
-          response=$(curl -s -H "Accept: application/json" https://api.github.com/repos/lukechannings/deno-arm64/releases)
-          release=$(echo $response | jq ".[]|select(.tag_name==\"${VERSION}\")")
+    - id: get_upload
+      run: 'export VERSION="${{ github.event.inputs.version || github.ref }}"
 
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "upload_url=$(echo $release | jq -r ".upload_url")" >> $GITHUB_OUTPUT
-          echo "prerelease=$(echo $release | jq -r ".prerelease")" >> $GITHUB_OUTPUT
+        VERSION="${VERSION#refs/tags/}"
+
+        response=$(curl -s -H "Accept: application/json" https://api.github.com/repos/lukechannings/deno-arm64/releases)
+
+        release=$(echo $response | jq ".[]|select(.tag_name==\"${VERSION}\")")
+
+
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+        echo "upload_url=$(echo $release | jq -r ".upload_url")" >> $GITHUB_OUTPUT
+
+        echo "prerelease=$(echo $release | jq -r ".prerelease")" >> $GITHUB_OUTPUT
+
+        '
   compile:
-    runs-on:
-      - self-hosted
-      - buildjet-16vcpu-ubuntu-2204-arm
+    runs-on: ubuntu-latest
     needs: metadata
-    name: "Compile"
+    name: Compile
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Compile Deno
-        shell: bash
-        run: |
-          echo "::echo::on"
-          echo "Compiling Deno version ${{ needs.metadata.outputs.version }}"
-          docker build -t deno-build --build-arg DENO_VERSION="${{ needs.metadata.outputs.version }}" --file ./Dockerfile.compile .
-          echo "Extracting compiled deno binary to $(pwd)"
-          CONTAINER_ID="$(docker create deno-build)"
-          docker cp "${CONTAINER_ID}:/deno/target/release/deno" .
-          docker rm "${CONTAINER_ID}"
-          zip deno-linux-arm64.zip ./deno
-      - name: Upload Release Asset
-        id: upload-release-asset-deno
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.metadata.outputs.upload_url }}
-          asset_path: ./deno-linux-arm64.zip
-          asset_name: deno-linux-arm64.zip
-          asset_content_type: application/zip
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Compile Deno
+      shell: bash
+      run: 'echo "::echo::on"
+
+        echo "Compiling Deno version ${{ needs.metadata.outputs.version }}"
+
+        docker build -t deno-build --build-arg DENO_VERSION="${{ needs.metadata.outputs.version
+        }}" --file ./Dockerfile.compile .
+
+        echo "Extracting compiled deno binary to $(pwd)"
+
+        CONTAINER_ID="$(docker create deno-build)"
+
+        docker cp "${CONTAINER_ID}:/deno/target/release/deno" .
+
+        docker rm "${CONTAINER_ID}"
+
+        zip deno-linux-arm64.zip ./deno
+
+        '
+    - name: Upload Release Asset
+      id: upload-release-asset-deno
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.metadata.outputs.upload_url }}
+        asset_path: ./deno-linux-arm64.zip
+        asset_name: deno-linux-arm64.zip
+        asset_content_type: application/zip
   build-docker:
     name: Build Docker images
     runs-on: ubuntu-latest
-    needs: [ metadata, compile ]
+    needs:
+    - metadata
+    - compile
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-      - name: Login to DockerHub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          build-args: VERSION=${{ needs.metadata.outputs.version }}
-          tags: |
-            lukechannings/deno:${{ needs.metadata.outputs.version }}
-            lukechannings/deno:latest
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v1
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+    - name: Login to DockerHub
+      uses: docker/login-action@v1
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    - name: Build and push
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        file: ./Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        build-args: VERSION=${{ needs.metadata.outputs.version }}
+        tags: 'lukechannings/deno:${{ needs.metadata.outputs.version }}
+
+          lukechannings/deno:latest
+
+          '
